@@ -1,12 +1,55 @@
-name: docker
+name: ci
 
 on:
   push:
     branches:
       - 'main'
+  pull_request:
 
 jobs:
+  # Build the image and run the headless-browser regression suites against the
+  # actual container, on every push and PR. Gates the image push below.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t fit-file-compare:test .
+      - name: Run container
+        run: docker run -d --name app -p 8080:8080 fit-file-compare:test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+      - name: Install Playwright browser
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "app did not become ready"; docker logs app; exit 1
+      - name: Run regression suites
+        working-directory: tests
+        env:
+          BASE_URL: http://localhost:8080/
+        run: npm test
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: tests/artifacts/
+          if-no-files-found: ignore
+
+  # Build multi-arch and push to GHCR. Only on pushes to main, only if tests pass.
   docker:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
