@@ -1,0 +1,6 @@
+.git
+.github
+.ci
+*.fit
+README.md
+.dockerignore

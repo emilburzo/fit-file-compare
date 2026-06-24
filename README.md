@@ -1,4 +1,4 @@
-# FIT Compare
+# fit-file-compare
 
 A single, no-backend web page for overlaying two `.fit` recordings — built to
 compare one sensor against another (e.g. **optical vs chest-strap heart rate**).
@@ -46,4 +46,4 @@ is the OpenStreetMap map tiles.
 - `index.html`, `app.js` — the app
 - `vendor/` — Leaflet, Chart.js, and the bundled `fit-file-parser`
   (`vendor/fit-parser.js`, an esbuild IIFE that exposes `window.FitParser`)
-# fit-file-compare
+

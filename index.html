@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIT Compare — two-track / two-sensor comparison</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1c2024;
+    --muted: #6b7480;
+    --line: #e3e6ea;
+    --accent: #1f6feb;
+    --map-bg: #e9edf0;
+    --hover-bg: #f0f6ff;
+    --danger: #b42318;
+    --tile-filter: none;
+    color-scheme: light;
+  }
+  /* dark palette, applied when explicitly chosen or (in Auto) when the OS prefers dark */
+  :root[data-theme="dark"] {
+    --bg: #0d1117; --card: #161b22; --ink: #e6edf3; --muted: #8b949e; --line: #30363d;
+    --accent: #4493f8; --map-bg: #1b2027; --hover-bg: #122031; --danger: #ff7b72;
+    --tile-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: #0d1117; --card: #161b22; --ink: #e6edf3; --muted: #8b949e; --line: #30363d;
+      --accent: #4493f8; --map-bg: #1b2027; --hover-bg: #122031; --danger: #ff7b72;
+      --tile-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    accent-color: var(--accent);
+  }
+  header.app {
+    padding: 18px 20px 10px;
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+  header.app h1 { font-size: 20px; margin: 0 0 2px; }
+  header.app p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .theme-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .theme-switch select {
+    padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); font-size: 13px; cursor: pointer;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 10px 20px 60px; }
+
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .slots { grid-template-columns: 1fr; } }
+
+  .slot {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    transition: border-color .15s, background .15s;
+  }
+  .slot.dragover { border-color: var(--accent); background: var(--hover-bg); }
+  .slot .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .slot input[type=color] {
+    width: 34px; height: 34px; padding: 0; border: 1px solid var(--line);
+    border-radius: 8px; background: none; cursor: pointer; flex: none;
+  }
+  .slot input[type=text] {
+    flex: 1; min-width: 0; padding: 8px 10px; font-size: 15px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--card);
+  }
+  .slot input[type=text]:focus, .slot input[type=color]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .dropzone {
+    border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px;
+    text-align: center; color: var(--muted); font-size: 13.5px; cursor: pointer;
+  }
+  .dropzone strong { color: var(--accent); font-weight: 600; }
+  .slot .file-name { font-size: 13px; color: var(--ink); margin-top: 8px; word-break: break-all; }
+  .slot .file-name.empty { color: var(--muted); }
+  .slot .err { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+    margin: 16px 0 8px; color: var(--muted); font-size: 13.5px;
+  }
+  .controls fieldset { border: none; padding: 0; margin: 0; display: flex; gap: 12px; align-items: center; }
+  .controls label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; color: var(--ink); }
+
+  section.panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    margin-top: 16px; overflow: hidden;
+  }
+  section.panel > h2 {
+    font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line);
+    color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .panel .body { padding: 14px; }
+  #map { height: 440px; width: 100%; background: var(--map-bg); }
+  .leaflet-tile-pane { filter: var(--tile-filter, none); }
+
+  .placeholder { padding: 40px 14px; text-align: center; color: var(--muted); }
+
+  table.stats { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.stats th, table.stats td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+  table.stats th:first-child, table.stats td:first-child { text-align: left; color: var(--muted); }
+  table.stats thead th { color: var(--ink); font-weight: 600; }
+  table.stats .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  table.stats tbody tr:last-child td { border-bottom: none; }
+
+  .chart-wrap { position: relative; height: 280px; margin-bottom: 6px; }
+  .chart-wrap + .chart-wrap { margin-top: 18px; }
+  .chart-title { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 6px; }
+
+  .leaflet-legend {
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    padding: 6px 9px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 13px; line-height: 1.6;
+  }
+  .leaflet-legend .line { display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: 7px; vertical-align: middle; }
+  .agreement-table { margin-top: 2px; }
+  .agreement-table td, .agreement-table th { white-space: nowrap; }
+  .hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+  #agreement-note { margin: 12px 0 0; }
+  footer.app { max-width: 1120px; margin: 0 auto; padding: 0 20px 40px; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header class="app">
+  <div class="head-row">
+    <div>
+      <h1>FIT Compare</h1>
+      <p>Overlay two FIT recordings to compare them — built for checking one sensor against another (e.g. optical vs chest-strap HR). Everything runs in your browser; no files leave your computer.</p>
+    </div>
+    <label class="theme-switch">Theme
+      <select id="theme-select" aria-label="Color theme">
+        <option value="auto">Auto</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  </div>
+</header>
+
+<main>
+  <div class="slots" id="slots">
+    <!-- slot A -->
+    <div class="slot" data-slot="a">
+      <div class="row">
+        <input type="color" data-role="color" aria-label="Track A color">
+        <input type="text" data-role="label" aria-label="Track A label" placeholder="Label (optional)">
+      </div>
+      <div class="dropzone" data-role="dropzone">
+        <strong>Choose a .fit file</strong> or drop it here
+        <input type="file" data-role="file" accept=".fit,.FIT" hidden>
+      </div>
+      <div class="file-name empty" data-role="filename">No file loaded</div>
+      <div class="err" data-role="err" hidden></div>
+    </div>
+    <!-- slot B -->
+    <div class="slot" data-slot="b">
+      <div class="row">
+        <input type="color" data-role="color" aria-label="Track B color">
+        <input type="text" data-role="label" aria-label="Track B label" placeholder="Label (optional)">
+      </div>
+      <div class="dropzone" data-role="dropzone">
+        <strong>Choose a .fit file</strong> or drop it here
+        <input type="file" data-role="file" accept=".fit,.FIT" hidden>
+      </div>
+      <div class="file-name empty" data-role="filename">No file loaded</div>
+      <div class="err" data-role="err" hidden></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <fieldset>
+      <span>Time axis:</span>
+      <label><input type="radio" name="align" value="clock" checked> Wall clock (overlay simultaneous rides)</label>
+      <label><input type="radio" name="align" value="zero"> From each start (0:00)</label>
+    </fieldset>
+  </div>
+
+  <section class="panel">
+    <h2>Map</h2>
+    <div id="map"></div>
+    <div class="placeholder" id="map-empty">Load a file with GPS data to see the track.</div>
+  </section>
+
+  <section class="panel" id="stats-panel" hidden>
+    <h2>Stats</h2>
+    <div class="body"><table class="stats" id="stats-table"></table></div>
+  </section>
+
+  <section class="panel" id="agreement-panel" hidden>
+    <h2>Agreement</h2>
+    <div class="body">
+      <table class="stats agreement-table" id="agreement-table"></table>
+      <p class="hint" id="agreement-note"></p>
+    </div>
+  </section>
+
+  <section class="panel" id="charts-panel" hidden>
+    <h2>Charts</h2>
+    <div class="body">
+      <p class="hint">Shift-drag or Ctrl-scroll to zoom · drag to pan · double-click to reset. All charts &amp; the map stay in sync.</p>
+      <div data-metric="hr">
+        <p class="chart-title">Heart rate (bpm)</p>
+        <div class="chart-wrap"><canvas id="chart-hr"></canvas></div>
+      </div>
+      <div data-metric="speed">
+        <p class="chart-title">Speed (km/h)</p>
+        <div class="chart-wrap"><canvas id="chart-speed"></canvas></div>
+      </div>
+      <div data-metric="elev">
+        <p class="chart-title">Elevation (m)</p>
+        <div class="chart-wrap"><canvas id="chart-elev"></canvas></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="app">
+  Labels &amp; colors are remembered on this device — label each track once and just swap the files for each new comparison. Unlabeled tracks show their file name.
+</footer>
+
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/hammer.min.js"></script>
+<script src="vendor/chartjs-plugin-zoom.js"></script>
+<script src="vendor/fit-parser.js"></script>
+<script src="app.js?v=6"></script>
+</body>
+</html>
